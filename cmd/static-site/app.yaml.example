@@ -1,0 +1,18 @@
+service: default
+
+runtime: go119
+instance_class: F1
+
+handlers:
+- url: /.*
+  script: auto
+  secure: always
+
+env_variables:
+  # Required for Google Cloud APIs
+  PROJECT_ID: '<PROJECT_ID>'
+  LOCATION_ID: '<REGION>'
+  SERVICE_NAME: 'default'
+  # content
+  CONTENT_ROOT: '_site'
+  

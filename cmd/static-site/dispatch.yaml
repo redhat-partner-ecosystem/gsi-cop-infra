@@ -1,0 +1,6 @@
+dispatch:
+  #- url: "api.podops.dev/*"
+  #  service: default
+
+  #- url: "cdn.podops.dev/*"
+  #  service: default
