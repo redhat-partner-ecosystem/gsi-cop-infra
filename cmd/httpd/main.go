@@ -1,9 +1,7 @@
 package main
 
 import (
-	"fmt"
 	"log"
-	"os"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -27,7 +25,7 @@ func setup() *echo.Echo {
 	// TODO add your own endpoints here
 	//e.GET("/", api.DefaultEndpoint)
 
-	// debug
+	/* debug
 	files, err := os.ReadDir(".")
 	if err != nil {
 		log.Fatal(err)
@@ -36,7 +34,7 @@ func setup() *echo.Echo {
 	for _, f := range files {
 		fmt.Println(f.Name())
 	}
-	// end debug
+	*/
 
 	return e
 }
