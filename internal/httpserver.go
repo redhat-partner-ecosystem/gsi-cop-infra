@@ -1,4 +1,4 @@
-package httpserver
+package internal
 
 import (
 	"context"
@@ -43,7 +43,7 @@ type (
 )
 
 // New returns a new HTTP server
-func New(router RouterFunc, shutdown ShutdownFunc, errorHandler echo.HTTPErrorHandler) (Server, error) {
+func NewHttp(router RouterFunc, shutdown ShutdownFunc, errorHandler echo.HTTPErrorHandler) (Server, error) {
 	if router == nil || shutdown == nil {
 		return nil, ErrInvalidConfiguration
 	}

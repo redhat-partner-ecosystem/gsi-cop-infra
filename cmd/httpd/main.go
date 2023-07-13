@@ -3,38 +3,35 @@ package main
 import (
 	"log"
 
+	"github.com/gorilla/sessions"
+
+	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 
 	"github.com/txsvc/stdlib/v2"
 
-	"github.com/redhat-partner-ecosystem/gsi-cop-infra/internal/httpserver"
+	"github.com/redhat-partner-ecosystem/gsi-cop-infra/internal"
 )
 
 func setup() *echo.Echo {
 	// create a new router instance
 	e := echo.New()
 
-	// add and configure the middleware(s)
+	// some basic config
 	e.Use(middleware.Recover())
 	e.Use(middleware.CORSWithConfig(middleware.DefaultCORSConfig))
 
+	// session support
+	e.Use(session.Middleware(sessions.NewCookieStore([]byte(stdlib.GetString("APP_SECRET", "supersecret")))))
+
+	// setup the OAuth2 provider
+	e.GET(internal.LoginUrl, internal.Login)
+	e.GET(internal.LogoutUrl, internal.Logout)
+	e.GET(internal.CallbackUrl, internal.Callback)
+
 	// the static part of the site comes from here
-	e.Static("/", stdlib.GetString("CONTENT_ROOT", "../../_site"))
-
-	// TODO add your own endpoints here
-	//e.GET("/", api.DefaultEndpoint)
-
-	/* debug
-	files, err := os.ReadDir(".")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	for _, f := range files {
-		fmt.Println(f.Name())
-	}
-	*/
+	e.Use(internal.Static(stdlib.GetString("CONTENT_ROOT", "../../../_site")))
 
 	return e
 }
@@ -51,7 +48,7 @@ func init() {
 }
 
 func main() {
-	service, err := httpserver.New(setup, shutdown, nil)
+	service, err := internal.NewHttp(setup, shutdown, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
