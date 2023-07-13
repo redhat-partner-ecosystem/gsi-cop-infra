@@ -10,9 +10,14 @@ handlers:
 
 env_variables:
   # Required for Google Cloud APIs
-  PROJECT_ID: '<PROJECT_ID>'
-  LOCATION_ID: '<REGION>'
+  #PROJECT_ID: '<PROJECT_ID>'
+  #LOCATION_ID: '<REGION>'
   SERVICE_NAME: 'default'
-  # content
+  # Required for OAuth2
+  #GOOGLE_CLIENT_ID: '<GOOGLE_CLIENT_ID>'
+  #GOOGLE_CLIENT_SECRET: '<GOOGLE_CLIENT_SECRET>'
+  # App config
+  #BASE_URL: '<BASE_URL>'
+  #APP_SECRET: '<APP_SECRET>'
+  APP_ENV: 'production'
   CONTENT_ROOT: '_site'
-  
