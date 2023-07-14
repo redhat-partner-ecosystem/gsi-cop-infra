@@ -2,6 +2,7 @@ package internal
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -31,37 +32,23 @@ type (
 		// Optional. Default value false.
 		HTML5 bool `yaml:"html5"`
 
-		// FIXME remove this
-		// Enable directory browsing.
-		// Optional. Default value false.
-		//Browse bool `yaml:"browse"`
-
-		// Enable ignoring of the base of the URL path.
-		// Example: when assigning a static middleware to a non root path group,
-		// the filesystem path is not doubled
-		// Optional. Default value false.
-		IgnoreBase bool `yaml:"ignoreBase"`
-
 		// Filesystem provides access to the static content.
 		// Optional. Defaults to http.Dir(config.Root)
 		Filesystem http.FileSystem `yaml:"-"`
 	}
 )
 
-// Static returns a Static middleware to serves static content from the provided
-// root directory.
+// Static returns a Static middleware to serves static content from the provided root directory.
 func Static(root string) echo.MiddlewareFunc {
-	c := StaticConfig{
+	config := StaticConfig{
 		Index: INDEX_HTML,
+		Root:  root,
 	}
-	c.Root = root
 
-	return StaticWithConfig(c)
+	return staticWithConfig(config)
 }
 
-// StaticWithConfig returns a Static middleware with config.
-// See `Static()`.
-func StaticWithConfig(config StaticConfig) echo.MiddlewareFunc {
+func staticWithConfig(config StaticConfig) echo.MiddlewareFunc {
 	// Defaults
 	if config.Root == "" {
 		config.Root = "." // For security we want to restrict to CWD.
@@ -76,33 +63,21 @@ func StaticWithConfig(config StaticConfig) echo.MiddlewareFunc {
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) (err error) {
-			p := c.Request().URL.Path
-			//fmt.Println(p)
 
 			if !IsAuthenticated(c) {
 				if !isAllowed(c) {
-					return echo.NewHTTPError(http.StatusUnauthorized, "Please provide valid credentials")
+					return c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s%s", baseUrl, LoginUrl))
+					//return echo.NewHTTPError(http.StatusUnauthorized, "Please provide valid credentials")
 				}
-				// let it pass, assuming there is a handler that will take care of it
+				// let it pass, assuming there is a handler that will take care the request
 			}
 
-			if strings.HasSuffix(c.Path(), "*") { // When serving from a group, e.g. `/static*`.
-				p = c.Param("*")
-			}
-			p, err = url.PathUnescape(p)
+			p, err := url.PathUnescape(c.Request().URL.Path)
 			if err != nil {
 				return
 			}
-			name := path.Join(config.Root, path.Clean("/"+p)) // "/"+ for security
 
-			if config.IgnoreBase {
-				routePath := path.Base(strings.TrimRight(c.Path(), "/*"))
-				baseURLPath := path.Base(p)
-				if baseURLPath == routePath {
-					i := strings.LastIndex(name, routePath)
-					name = name[:i] + strings.Replace(name[i:], routePath, "", 1)
-				}
-			}
+			name := path.Join(config.Root, path.Clean("/"+p)) // "/"+ for security
 
 			file, err := config.Filesystem.Open(name)
 			if err != nil {
@@ -113,7 +88,7 @@ func StaticWithConfig(config StaticConfig) echo.MiddlewareFunc {
 				// file with that path did not exist, so we continue down in middleware/handler chain, hoping that we end up in
 				// handler that is meant to handle this request
 				if err = next(c); err == nil {
-					return err
+					return nil
 				}
 
 				var he *echo.HTTPError
@@ -155,7 +130,8 @@ func StaticWithConfig(config StaticConfig) echo.MiddlewareFunc {
 	}
 }
 
-// isAllowed whitelists url paths that do not need authentication
+// isAllowed whitelists url paths that do not need authentication,
+// e.g. all paths used during the user authentication.
 func isAllowed(c echo.Context) bool {
 	p := c.Request().URL.Path
 	return strings.HasPrefix(p, AuthNamespace)
