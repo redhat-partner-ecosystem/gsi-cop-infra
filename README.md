@@ -9,3 +9,5 @@ Code that powers the GSI CoP
 * https://github.com/labstack/echo
 
 * https://pkg.go.dev/github.com/labstack/echo
+
+* https://github.com/markbates/goth

@@ -6,7 +6,6 @@ require (
 	github.com/gorilla/sessions v1.2.1
 	github.com/labstack/echo-contrib v0.15.0
 	github.com/labstack/echo/v4 v4.10.2
-	github.com/labstack/gommon v0.4.0
 	github.com/markbates/goth v1.77.0
 	github.com/txsvc/stdlib/v2 v2.5.0
 )
@@ -16,8 +15,8 @@ require (
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/gorilla/context v1.1.1 // indirect
-	github.com/gorilla/mux v1.6.2 // indirect
 	github.com/gorilla/securecookie v1.1.1 // indirect
+	github.com/labstack/gommon v0.4.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
 	github.com/rs/zerolog v1.29.1 // indirect

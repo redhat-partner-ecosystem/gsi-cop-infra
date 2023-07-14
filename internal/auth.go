@@ -1,53 +1,61 @@
 package internal
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 
-	"github.com/gorilla/sessions"
 	"github.com/labstack/echo/v4"
 	"github.com/markbates/goth"
-	"github.com/markbates/goth/gothic"
-
 	provider "github.com/markbates/goth/providers/google"
 
 	"github.com/txsvc/stdlib/v2"
 )
 
 const (
-	LoginUrl      = "/_p/login"
-	LogoutUrl     = "/_p/logout"
-	CallbackUrl   = "/_p/callback"
-	AuthNamespace = "/_p/"
+	LoginUrl    = "/_p/login"
+	LogoutUrl   = "/_p/logout"
+	CallbackUrl = "/_p/callback"
 
-	maxAge = 86400 * 30 // 30 days
+	AuthNamespace = "/_p/" // allow requests starting with this prefix
+
+	UserID          = "uid"
+	UserAccessToken = "uatk"
 )
 
 var baseUrl = stdlib.GetString("BASE_URL", "http://localhost:8080")
 
 func init() {
-	isProd := stdlib.GetString("APP_ENV", "development") == "production"
-
-	// initialize the session store
-	store := sessions.NewCookieStore([]byte(stdlib.GetString("APP_SECRET", "supersecret")))
-	store.MaxAge(maxAge)
-	store.Options.Path = "/"
-	store.Options.HttpOnly = true // HttpOnly should always be enabled
-	store.Options.Secure = isProd
-	gothic.Store = store
-
 	// initilaize the provider
 	goth.UseProviders(provider.New(
 		stdlib.GetString("GOOGLE_CLIENT_ID", ""), stdlib.GetString("GOOGLE_CLIENT_SECRET", ""),
 		fmt.Sprintf("%s%s", baseUrl, CallbackUrl),
-		"https://www.googleapis.com/auth/userinfo.email"),
+		"https://www.googleapis.com/auth/userinfo.email",
+		"https://www.googleapis.com/auth/userinfo.profile"),
 	)
 }
 
+func IsAuthenticated(c echo.Context) bool {
+	if _, err := GetFromSession(c, UserID); err == nil {
+		return true
+	}
+
+	return false
+}
+
+func Authenticate(c echo.Context, user goth.User) error {
+	if err := StoreInSession(c, UserID, user.Email); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func Login(c echo.Context) error {
-	//fmt.Println("--> login")
 	providerName, err := GetProviderName(c)
 	if err != nil {
 		return err
@@ -68,8 +76,7 @@ func Login(c echo.Context) error {
 		return err
 	}
 
-	err = StoreInSession(providerName, sess.Marshal(), c)
-	if err != nil {
+	if err := StoreInSession(c, providerName, sess.Marshal()); err != nil {
 		return err
 	}
 
@@ -77,13 +84,23 @@ func Login(c echo.Context) error {
 }
 
 func Logout(c echo.Context) error {
-	//fmt.Println("--> logout")
-	gothic.Logout(c.Response(), c.Request())
-	return c.Redirect(http.StatusTemporaryRedirect, baseUrl)
+	req := c.Request()
+	session, err := store.Get(req, sessionName)
+	if err != nil {
+		return err
+	}
+
+	session.Options.MaxAge = -1
+	session.Values = make(map[interface{}]interface{})
+
+	if err := session.Save(req, c.Response()); err != nil {
+		return errors.New("could not delete session ")
+	}
+
+	return c.Redirect(http.StatusTemporaryRedirect, baseUrl) // FIXME make this configurable
 }
 
 func Callback(c echo.Context) error {
-	//fmt.Println("--> callback")
 	providerName, _ := GetProviderName(c)
 
 	provider, err := goth.GetProvider(providerName)
@@ -91,7 +108,7 @@ func Callback(c echo.Context) error {
 		return err
 	}
 
-	value, err := GetFromSession(providerName, c)
+	value, err := GetFromSession(c, providerName)
 	if err != nil {
 		return err
 	}
@@ -105,9 +122,8 @@ func Callback(c echo.Context) error {
 		return err
 	}
 
-	_, err = provider.FetchUser(sess)
-	if err == nil {
-		// user can be found with existing session data
+	if _, err := provider.FetchUser(sess); err == nil {
+		// user can be found within the existing session data
 		return nil
 	}
 
@@ -121,14 +137,11 @@ func Callback(c echo.Context) error {
 	}
 
 	// get new token and retry fetch
-	_, err = sess.Authorize(provider, params)
-	if err != nil {
+	if _, err := sess.Authorize(provider, params); err != nil {
 		return err
 	}
 
-	err = StoreInSession(providerName, sess.Marshal(), c)
-
-	if err != nil {
+	if err := StoreInSession(c, providerName, sess.Marshal()); err != nil {
 		return err
 	}
 
@@ -137,7 +150,7 @@ func Callback(c echo.Context) error {
 		return err
 	}
 
-	if err = gothic.StoreInSession("email", user.Email, c.Request(), c.Response()); err != nil {
+	if err = Authenticate(c, user); err != nil {
 		return err
 	}
 
@@ -163,23 +176,16 @@ func validateState(c echo.Context, sess goth.Session) error {
 	if originalState != "" && (originalState != reqState) {
 		return errors.New("state token mismatch")
 	}
-	return nil
-}
 
-func IsAuthenticated(c echo.Context) bool {
-	if _, err := gothic.GetFromSession("email", c.Request()); err == nil {
-		return true
-	}
-	return false
+	return nil
 }
 
 // GetProviderName is a function used to get the name of a provider
 // for a given request. By default, this provider is fetched from
-// the URL query string. If you provide it in a different way,
-// assign your own function to this variable that returns the provider
-// name for your request.
+// the URL query string.
 func GetProviderName(c echo.Context) (string, error) {
-	return "google", nil // only Google is supported for now
+	return "google", nil // FIXME: only Google is supported for now
+
 	/*
 		if p := c.Param("provider"); p != "" {
 			return p, nil
@@ -191,25 +197,37 @@ func GetProviderName(c echo.Context) (string, error) {
 
 // SetState sets the state string associated with the given request.
 // If no state string is associated with the request, one will be generated.
-// This state is sent to the provider and can be retrieved during the
-// callback.
+// This state is sent to the provider and can be retrieved during the callback.
 func SetState(c echo.Context) string {
-	return gothic.SetState(c.Request())
+	state := c.Request().URL.Query().Get("state")
+	if len(state) > 0 {
+		return state
+	}
+
+	// If a state query param is not passed in, generate a random
+	// base64-encoded nonce so that the state on the auth URL
+	// is unguessable, preventing CSRF attacks, as described in
+	//
+	// https://auth0.com/docs/protocols/oauth2/oauth-state#keep-reading
+	nonceBytes := make([]byte, 64)
+	_, err := io.ReadFull(rand.Reader, nonceBytes)
+	if err != nil {
+		panic("source of randomness unavailable: " + err.Error())
+	}
+
+	return base64.URLEncoding.EncodeToString(nonceBytes)
 }
 
 // GetState gets the state returned by the provider during the callback.
-// This is used to prevent CSRF attacks, see http://tools.ietf.org/html/rfc6749#section-10.12
+// This is used to prevent CSRF attacks, see
+// http://tools.ietf.org/html/rfc6749#section-10.12
 func GetState(c echo.Context) string {
-	return gothic.GetState(c.Request())
-}
+	req := c.Request()
+	params := req.URL.Query()
 
-// StoreInSession stores a specified key/value pair in the session.
-func StoreInSession(key string, value string, c echo.Context) error {
-	return gothic.StoreInSession(key, value, c.Request(), c.Response())
-}
+	if params.Encode() == "" && req.Method == http.MethodPost {
+		return req.FormValue("state")
+	}
 
-// GetFromSession retrieves a previously-stored value from the session.
-// If no value has previously been stored at the specified key, it will return an error.
-func GetFromSession(key string, c echo.Context) (string, error) {
-	return gothic.GetFromSession(key, c.Request())
+	return params.Get("state")
 }
